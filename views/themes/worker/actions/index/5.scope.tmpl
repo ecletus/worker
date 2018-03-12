@@ -13,6 +13,9 @@
     <a class="mdl-layout__tab{{if (eq $order_by "done")}} is-active{{end}}" href={{patch_current_url "scopes" "done"}}>
       {{t "qor_worker.filter.done" "Done"}}
     </a>
+        <a class="mdl-layout__tab{{if (eq $order_by "killed")}} is-active{{end}}" href={{patch_current_url "scopes" "killed"}}>
+        {{t "qor_worker.filter.killed" "Killed"}}
+        </a>
     <a class="mdl-layout__tab{{if (eq $order_by "exception")}} is-active{{end}}" href={{patch_current_url "scopes" "exception"}}>
       {{t "qor_worker.filter.errors" "Errors"}}
     </a>

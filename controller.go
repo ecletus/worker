@@ -15,6 +15,7 @@ type workerController struct {
 
 func (wc workerController) Index(context *admin.Context) {
 	context = context.NewResourceContext(wc.JobResource)
+	context.SetDB(wc.Worker.ToDB(context.DB))
 	result, err := context.FindMany()
 	context.AddError(err)
 
@@ -30,7 +31,7 @@ func (wc workerController) Index(context *admin.Context) {
 }
 
 func (wc workerController) Show(context *admin.Context) {
-	job, err := wc.GetJob(context.ResourceID)
+	job, err := wc.GetJob(context.Site, context.ResourceID)
 	context.AddError(err)
 	context.Execute("show", job)
 }
@@ -40,7 +41,8 @@ func (wc workerController) New(context *admin.Context) {
 }
 
 func (wc workerController) Update(context *admin.Context) {
-	if job, err := wc.GetJob(context.ResourceID); err == nil {
+	context.SetDB(wc.Worker.ToDB(context.DB))
+	if job, err := wc.GetJob(context.Site, context.ResourceID); err == nil {
 		if job.GetStatus() == JobStatusScheduled || job.GetStatus() == JobStatusNew {
 			if job.GetJob().HasPermission(roles.Update, context.Context) {
 				if context.AddError(wc.Worker.JobResource.Decode(context.Context, job)); !context.HasError() {
@@ -66,9 +68,10 @@ func (wc workerController) Update(context *admin.Context) {
 }
 
 func (wc workerController) AddJob(context *admin.Context) {
+	context.SetDB(wc.Worker.ToDB(context.DB))
 	jobResource := wc.Worker.JobResource
-	result := jobResource.NewStruct().(QorJobInterface)
-	job := wc.Worker.GetRegisteredJob(context.Request.Form.Get("job_name"))
+	result := jobResource.NewStruct(context.Site).(QorJobInterface)
+	job := wc.Worker.GetRegisteredJob(context.Request.Form.Get("QorResource.Kind"))
 	result.SetJob(job)
 
 	if !job.HasPermission(roles.Create, context.Context) {
@@ -98,7 +101,8 @@ func (wc workerController) AddJob(context *admin.Context) {
 }
 
 func (wc workerController) RunJob(context *admin.Context) {
-	if newJob := wc.Worker.saveAnotherJob(context.ResourceID); newJob != nil {
+	context.SetDB(wc.Worker.ToDB(context.DB))
+	if newJob := wc.Worker.saveAnotherJob(context.Site, context.ResourceID); newJob != nil {
 		wc.Worker.AddJob(newJob)
 	} else {
 		context.AddError(errors.New("failed to clone job " + context.ResourceID))
@@ -108,8 +112,9 @@ func (wc workerController) RunJob(context *admin.Context) {
 }
 
 func (wc workerController) KillJob(context *admin.Context) {
-	if qorJob, err := wc.Worker.GetJob(context.ResourceID); err == nil {
-		if context.AddError(wc.Worker.KillJob(qorJob.GetJobID())); !context.HasError() {
+	context.SetDB(wc.Worker.ToDB(context.DB))
+	if qorJob, err := wc.Worker.GetJob(context.Site, context.ResourceID); err == nil {
+		if context.AddError(wc.Worker.KillJob(context.Site, qorJob.GetJobID())); !context.HasError() {
 			context.Flash(string(context.Admin.T(context.Context, "qor_worker.form.successfully_killed", "{{.Name}} was successfully killed", wc.JobResource)), "success")
 		} else {
 			context.Flash(string(context.Admin.T(context.Context, "qor_worker.form.failed_to_kill", "Failed to kill job {{.Name}}", wc.JobResource)), "error")

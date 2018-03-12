@@ -8,6 +8,7 @@ import (
 
 // Job is a struct that hold Qor Job definations
 type Job struct {
+	Key        string
 	Name       string
 	Group      string
 	Handler    func(interface{}, QorJobInterface) error
@@ -18,8 +19,8 @@ type Job struct {
 }
 
 // NewStruct initialize job struct
-func (job *Job) NewStruct() interface{} {
-	qorJobInterface := job.Worker.JobResource.NewStruct().(QorJobInterface)
+func (job *Job) NewStruct(site qor.SiteInterface) interface{} {
+	qorJobInterface := job.Worker.JobResource.NewStruct(site).(QorJobInterface)
 	qorJobInterface.SetJob(job)
 	return qorJobInterface
 }

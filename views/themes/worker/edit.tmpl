@@ -17,7 +17,7 @@
         <h5 class="workers-label">{{$job.GetJobName}}</h5>
 
         <div class="qor-workers-abort">
-          <form action={{url_for $job .Resource}} method="POST">
+          <form action="{{url_for $job .Resource}}" method="POST">
             <input type="hidden" name="_method" value="PUT"/>
             {{render_form $job (new_sections $job.GetJob.Worker.JobResource)}}
             <div class="qor-form__actions">
@@ -28,7 +28,7 @@
         </div>
       {{else}}
         <div data-toggle="qor.workers">
-          <h5 class="workers-label">{{$job.GetJobName}}</h5>
+          <h5 class="workers-label">{{$job.GetName}}{{if not (eq $job.GetJobName $job.GetName)}}[{{$job.GetJobName}}]{{end}}</h5>
 
           <div class="qor-worker--progress clearfix" data-status-name={{t "qor_worker.jobs.Status" "Status"}} data-progress={{$job.GetProgress}} data-status={{$job.GetStatus}}>
             <p class="workers-label-title">{{t "qor_worker.jobs.Status" "Status"}}</p>

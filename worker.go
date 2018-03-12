@@ -2,16 +2,19 @@ package worker
 
 import (
 	"errors"
-	"flag"
 	"fmt"
-	"os"
+	"time"
+	"strings"
 	"runtime/debug"
+	"crypto/sha256"
 
+	errors2 "github.com/go-errors/errors"
 	"github.com/jinzhu/gorm"
 	"github.com/qor/admin"
 	"github.com/qor/qor"
 	"github.com/qor/qor/resource"
 	"github.com/qor/roles"
+	"github.com/qor/qor/utils"
 )
 
 const (
@@ -46,11 +49,12 @@ func New(config ...*Config) *Worker {
 		cfg.Queue = NewCronQueue()
 	}
 
-	return &Worker{Config: cfg}
+	return &Worker{Config: cfg, Jobs:make(map[string]*Job)}
 }
 
 // Config worker config
 type Config struct {
+	Sites qor.SitesReaderInterface
 	Queue Queue
 	Job   QorJobInterface
 	Admin *admin.Admin
@@ -60,7 +64,7 @@ type Config struct {
 type Worker struct {
 	*Config
 	JobResource *admin.Resource
-	Jobs        []*Job
+	Jobs        map[string]*Job
 	mounted     bool
 }
 
@@ -72,23 +76,37 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 
 		worker.Admin = res.GetAdmin()
 		worker.JobResource = worker.Admin.NewResource(worker.Config.Job)
+		worker.JobResource.GetMeta("Kind").Type = "hidden"
 		worker.JobResource.UseTheme("worker")
 		worker.JobResource.Meta(&admin.Meta{Name: "Name", Valuer: func(record interface{}, context *qor.Context) interface{} {
-			return record.(QorJobInterface).GetJobName()
+			job := record.(QorJobInterface)
+			if job.GetName() != job.GetJobName() {
+				return job.GetName() + " [" + job.GetJobName() + "]"
+			}
+			return job.GetJobName()
 		}})
-		worker.JobResource.IndexAttrs("ID", "Name", "Status", "CreatedAt")
+		worker.JobResource.Meta(&admin.Meta{Name: "StatusAndTime", Valuer: func(record interface{}, context *qor.Context) interface{} {
+			job := record.(QorJobInterface)
+			if job.GetStatusUpdatedAt() != nil {
+				return fmt.Sprintf("%v (at %v)", job.GetStatus(), job.GetStatusUpdatedAt().Format(time.RFC822Z))
+			}
+			return job.GetStatus()
+		}})
+		worker.JobResource.NewAttrs("Name", worker.JobResource.NewAttrs())
+		worker.JobResource.EditAttrs("Name", worker.JobResource.EditAttrs())
+		worker.JobResource.IndexAttrs("ID", "Name", "StatusAndTime", "CreatedAt")
 		worker.JobResource.Name = res.Name
 
-		for _, status := range []string{JobStatusScheduled, JobStatusNew, JobStatusRunning, JobStatusDone, JobStatusException} {
+		for _, status := range []string{JobStatusScheduled, JobStatusNew, JobStatusRunning, JobStatusDone, JobStatusKilled, JobStatusException} {
 			var status = status
-			worker.JobResource.Scope(&admin.Scope{Name: status, Handler: func(db *gorm.DB, ctx *qor.Context) *gorm.DB {
+			worker.JobResource.Scope(&admin.Scope{Name: status, Handler: func(db *gorm.DB, s *admin.Searcher, ctx *qor.Context) *gorm.DB {
 				return db.Where("status = ?", status)
 			}})
 		}
 
 		// default scope
 		worker.JobResource.Scope(&admin.Scope{
-			Handler: func(db *gorm.DB, ctx *qor.Context) *gorm.DB {
+			Handler: func(db *gorm.DB, s *admin.Searcher, ctx *qor.Context) *gorm.DB {
 				if jobName := ctx.Request.URL.Query().Get("job"); jobName != "" {
 					return db.Where("kind = ?", jobName)
 				}
@@ -97,7 +115,7 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 					var jobNames []string
 					for _, job := range worker.Jobs {
 						if groupName == job.Group {
-							jobNames = append(jobNames, job.Name)
+							jobNames = append(jobNames, job.Key)
 						}
 					}
 					if len(jobNames) > 0 {
@@ -112,7 +130,10 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 		})
 
 		// Auto Migration
-		worker.Admin.Config.DB.AutoMigrate(worker.Config.Job)
+		worker.Admin.Config.SetupDB(func(db *qor.DB) error {
+			db.DB.AutoMigrate(worker.Config.Job)
+			return nil
+		})
 
 		// Configure jobs
 		for _, job := range worker.Jobs {
@@ -126,31 +147,7 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 // ConfigureQorResource a method used to config Worker for qor admin
 func (worker *Worker) ConfigureQorResource(res resource.Resourcer) {
 	if res, ok := res.(*admin.Resource); ok {
-		// Parse job
-		cmdLine := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-		qorJobID := cmdLine.String("qor-job", "", "Qor Job ID")
-		runAnother := cmdLine.Bool("run-another", false, "Run another qor job")
-		cmdLine.Parse(os.Args[1:])
 		worker.mounted = true
-
-		if *qorJobID != "" {
-			if *runAnother == true {
-				if newJob := worker.saveAnotherJob(*qorJobID); newJob != nil {
-					newJobID := newJob.GetJobID()
-					qorJobID = &newJobID
-				} else {
-					fmt.Println("failed to clone job " + *qorJobID)
-					os.Exit(1)
-				}
-			}
-
-			if err := worker.RunJob(*qorJobID); err == nil {
-				os.Exit(0)
-			} else {
-				fmt.Println(err)
-				// os.Exit(1)
-			}
-		}
 
 		// register view funcmaps
 		worker.Admin.RegisterFuncMap("get_grouped_jobs", func(context *admin.Context) map[string][]*Job {
@@ -198,38 +195,38 @@ func (worker *Worker) RegisterJob(job *Job) error {
 	}
 
 	job.Worker = worker
-	worker.Jobs = append(worker.Jobs, job)
+	if job.Key == "" {
+		if job.Resource == nil {
+			job.Key = fmt.Sprintf("%x", sha256.Sum256([]byte(job.Name)))
+		} else {
+			job.Key = fmt.Sprintf("%x", sha256.Sum256([]byte(utils.TypeId(job.Resource.Value))))
+		}
+	}
+	worker.Jobs[job.Key] = job
 	return nil
 }
 
 // GetRegisteredJob register a job into Worker
 func (worker *Worker) GetRegisteredJob(name string) *Job {
-	for _, job := range worker.Jobs {
-		if job.Name == name {
-			return job
-		}
-	}
-	return nil
+	return worker.Jobs[name]
 }
 
 // GetJob get job with id
-func (worker *Worker) GetJob(jobID string) (QorJobInterface, error) {
-	qorJob := worker.JobResource.NewStruct().(QorJobInterface)
+func (worker *Worker) GetJob(site qor.SiteInterface, jobID string) (QorJobInterface, error) {
+	qorJob := worker.JobResource.NewStruct(site).(QorJobInterface)
 
-	context := worker.Admin.NewContext(nil, nil)
+	context := worker.Admin.NewContext(site)
+	context.SetDB(worker.ToDB(context.DB))
 	context.ResourceID = jobID
 	context.Resource = worker.JobResource
 
 	if err := worker.JobResource.FindOneHandler(qorJob, nil, context.Context); err == nil {
-		for _, job := range worker.Jobs {
-			if job.Name == qorJob.GetJobName() {
-				qorJob.SetJob(job)
-				return qorJob, nil
-			}
+		if qorJob.GetJob() != nil {
+			return qorJob, nil
 		}
-		return nil, fmt.Errorf("failed to load job: %v, unregistered job type: %v", jobID, qorJob.GetJobName())
+		return nil, fmt.Errorf("failed to load job: %v, unregistered job type: %v", JobUID(site, jobID), qorJob.GetJobName())
 	}
-	return nil, fmt.Errorf("failed to find job: %v", jobID)
+	return nil, fmt.Errorf("failed to find job: %v", JobUID(site, jobID))
 }
 
 // AddJob add job to worker
@@ -238,13 +235,13 @@ func (worker *Worker) AddJob(qorJob QorJobInterface) error {
 }
 
 // RunJob run job with job id
-func (worker *Worker) RunJob(jobID string) error {
-	qorJob, err := worker.GetJob(jobID)
+func (worker *Worker) RunJob(site qor.SiteInterface, jobID string) error {
+	qorJob, err := worker.GetJob(site, jobID)
 
 	if err == nil {
 		defer func() {
 			if r := recover(); r != nil {
-				qorJob.AddLog(string(debug.Stack()))
+				qorJob.AddLog(string(errors2.Wrap(err, 2).ErrorStack()))
 				qorJob.SetProgressText(fmt.Sprint(r))
 				qorJob.SetStatus(JobStatusException)
 			}
@@ -267,16 +264,14 @@ func (worker *Worker) RunJob(jobID string) error {
 	return err
 }
 
-func (worker *Worker) saveAnotherJob(jobID string) QorJobInterface {
-	jobResource := worker.JobResource
-	newJob := jobResource.NewStruct().(QorJobInterface)
-
-	job, err := worker.GetJob(jobID)
+func (worker *Worker) saveAnotherJob(site qor.SiteInterface, jobID string) QorJobInterface {
+	job, err := worker.GetJob(site, jobID)
 	if err == nil {
+		jobResource := worker.JobResource
+		newJob := jobResource.NewStruct(site).(QorJobInterface)
 		newJob.SetJob(job.GetJob())
 		newJob.SetSerializableArgumentValue(job.GetArgument())
-		context := worker.Admin.NewContext(nil, nil)
-		if err := jobResource.CallSave(newJob, context.Context); err == nil {
+		if err := jobResource.CallSave(newJob, &qor.Context{Site:site}); err == nil {
 			return newJob
 		}
 	}
@@ -284,8 +279,8 @@ func (worker *Worker) saveAnotherJob(jobID string) QorJobInterface {
 }
 
 // KillJob kill job with job id
-func (worker *Worker) KillJob(jobID string) error {
-	if qorJob, err := worker.GetJob(jobID); err == nil {
+func (worker *Worker) KillJob(site qor.SiteInterface, jobID string) error {
+	if qorJob, err := worker.GetJob(site, jobID); err == nil {
 		if qorJob.GetStatus() == JobStatusRunning {
 			if err = qorJob.GetJob().GetQueue().Kill(qorJob); err == nil {
 				qorJob.SetStatus(JobStatusKilled)
@@ -294,7 +289,7 @@ func (worker *Worker) KillJob(jobID string) error {
 			return err
 		} else if qorJob.GetStatus() == JobStatusScheduled || qorJob.GetStatus() == JobStatusNew {
 			qorJob.SetStatus(JobStatusKilled)
-			return worker.RemoveJob(jobID)
+			return worker.RemoveJob(site, jobID)
 		} else {
 			return errors.New("invalid job status")
 		}
@@ -304,10 +299,49 @@ func (worker *Worker) KillJob(jobID string) error {
 }
 
 // RemoveJob remove job with job id
-func (worker *Worker) RemoveJob(jobID string) error {
-	qorJob, err := worker.GetJob(jobID)
+func (worker *Worker) RemoveJob(site qor.SiteInterface, jobID string) error {
+	qorJob, err := worker.GetJob(site, jobID)
 	if err == nil {
 		return qorJob.GetJob().GetQueue().Remove(qorJob)
 	}
 	return err
+}
+
+func (worker *Worker) ParseJobUID(uid string) (site qor.SiteInterface, jobID string, err error) {
+	parts := strings.Split(uid, "@")
+	if len(parts) != 2 {
+		return nil, "", fmt.Errorf("Invalid uid %q.", uid)
+	}
+	siteName, jobID := parts[0], parts[1]
+	site, err = worker.Sites.GetOrError(siteName)
+	return
+}
+
+func (worker *Worker) ToDB(db *gorm.DB) *gorm.DB {
+	return db.Set("qor:worker.worker", worker)
+}
+
+func WorkerFromDB(db *gorm.DB) *Worker {
+	worker, ok := db.Get("qor:worker.worker")
+	if ok {
+		return worker.(*Worker)
+	}
+	return nil
+}
+
+func JobUID(site interface{}, job interface{}) string {
+	var siteName, jobId string
+	switch st := site.(type) {
+	case string:
+		siteName = st
+	case qor.SiteInterface:
+		siteName = st.Name()
+	}
+	switch jb := job.(type) {
+	case string:
+		jobId = jb
+	case QorJobInterface:
+		jobId = jb.GetJobID()
+	}
+	return siteName + "@" + jobId
 }

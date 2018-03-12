@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jinzhu/gorm"
+	"github.com/qor/qor"
 	"github.com/qor/admin"
 	"github.com/qor/audited"
 	"github.com/qor/serializable_meta"
@@ -16,9 +18,14 @@ import (
 
 // QorJobInterface is a interface, defined methods that needs for a qor job
 type QorJobInterface interface {
+	Site() qor.SiteInterface
+	UID() string
 	GetJobID() string
+	GetJobKey() string
 	GetJobName() string
+	GetName() string
 	GetStatus() string
+	GetStatusUpdatedAt() *time.Time
 	SetStatus(string) error
 	GetJob() *Job
 	SetJob(*Job)
@@ -68,8 +75,13 @@ type TableCell struct {
 
 // QorJob predefined qor job struct, which will be used for Worker, if it doesn't include a job resource
 type QorJob struct {
-	gorm.Model
-	Status       string `sql:"default:'new'"`
+	ID           string       `gorm:"size:24;primary_key" serial:"yes"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	DeletedAt    *time.Time   `sql:"index"`
+	StatusUpdatedAt *time.Time
+	Name         string
+	Status       string       `sql:"default:'new'"`
 	Progress     uint
 	ProgressText string
 	Log          string       `sql:"size:65532"`
@@ -79,16 +91,49 @@ type QorJob struct {
 	Job   *Job       `sql:"-"`
 	audited.AuditedModel
 	serializable_meta.SerializableMeta
+	site  qor.SiteInterface
+}
+
+func (job *QorJob) Init(site qor.SiteInterface) {
+	job.site = site
+}
+
+func (job *QorJob) AfterScan(db *gorm.DB) {
+	job.site = qor.GetSiteFromDB(db)
+	job.Job = WorkerFromDB(db).GetRegisteredJob(job.Kind)
+}
+
+func (job *QorJob) Site() qor.SiteInterface {
+	return job.site
+}
+
+// GetJobID get job's ID from a qor job
+func (job *QorJob) GetJobKey() string {
+	return job.Kind
 }
 
 // GetJobID get job's ID from a qor job
 func (job *QorJob) GetJobID() string {
-	return fmt.Sprint(job.ID)
+	return job.ID
+}
+
+// UID get job's UID
+func (job *QorJob) UID() string {
+	return JobUID(job.site, job)
+}
+
+// GetName get job's name from a qor job
+func (job *QorJob) GetName() string {
+	return job.Name
 }
 
 // GetJobName get job's name from a qor job
 func (job *QorJob) GetJobName() string {
-	return job.Kind
+	return job.Job.Name
+}
+
+func (job *QorJob) GetStatusUpdatedAt() *time.Time {
+	return job.StatusUpdatedAt
 }
 
 // GetStatus get job's status from a qor job
@@ -100,9 +145,12 @@ func (job *QorJob) GetStatus() string {
 func (job *QorJob) SetStatus(status string) error {
 	job.mutex.Lock()
 	defer job.mutex.Unlock()
+	t := time.Now()
+	job.StatusUpdatedAt = &t
 
 	worker := job.GetJob().Worker
-	context := worker.Admin.NewContext(nil, nil).Context
+	context := job.site.NewContext()
+	context.SetDB(worker.ToDB(context.DB))
 	job.Status = status
 	if status == JobStatusDone {
 		job.Progress = 100
@@ -112,7 +160,10 @@ func (job *QorJob) SetStatus(status string) error {
 
 // SetJob set `Job` for a qor job instance
 func (job *QorJob) SetJob(j *Job) {
-	job.Kind = j.Name
+	if job.Name == "" {
+		job.Name = j.Name
+	}
+	job.Kind = j.Key
 	job.Job = j
 }
 
@@ -148,7 +199,8 @@ func (job *QorJob) SetProgress(progress uint) error {
 	defer job.mutex.Unlock()
 
 	worker := job.GetJob().Worker
-	context := worker.Admin.NewContext(nil, nil).Context
+	context := job.site.NewContext()
+	context.SetDB(worker.ToDB(context.DB))
 	if progress > 100 {
 		progress = 100
 	}
@@ -183,7 +235,8 @@ func (job *QorJob) AddLog(log string) error {
 	defer job.mutex.Unlock()
 
 	worker := job.GetJob().Worker
-	context := worker.Admin.NewContext(nil, nil).Context
+	context := job.site.NewContext()
+	context.SetDB(worker.ToDB(context.DB))
 	fmt.Println(log)
 	job.Log += "\n" + log
 	return worker.JobResource.CallSave(job, context)
@@ -200,7 +253,8 @@ func (job *QorJob) AddResultsRow(cells ...TableCell) error {
 	defer job.mutex.Unlock()
 
 	worker := job.GetJob().Worker
-	context := worker.Admin.NewContext(nil, nil).Context
+	context := job.site.NewContext()
+	context.SetDB(worker.ToDB(context.DB))
 	job.ResultsTable.TableCells = append(job.ResultsTable.TableCells, cells)
 	return worker.JobResource.CallSave(job, context)
 }
