@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"github.com/aghape/admin"
 	"github.com/aghape/audited"
 	"github.com/aghape/aghape"
@@ -99,7 +99,7 @@ func (job *QorJob) Init(site qor.SiteInterface) {
 	job.site = site
 }
 
-func (job *QorJob) AfterScan(db *gorm.DB) {
+func (job *QorJob) AfterScan(db *aorm.DB) {
 	job.site = qor.GetSiteFromDB(db)
 	job.Job = WorkerFromDB(db).GetRegisteredJob(job.Kind)
 }

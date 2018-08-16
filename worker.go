@@ -11,7 +11,7 @@ import (
 	"os"
 
 	errors2 "github.com/go-errors/errors"
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-route"
 	"github.com/aghape/admin"
 	"github.com/aghape/aghape"
@@ -133,14 +133,14 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 
 		for _, status := range []string{JobStatusScheduled, JobStatusNew, JobStatusRunning, JobStatusDone, JobStatusKilled, JobStatusException} {
 			var status = status
-			worker.JobResource.Scope(&admin.Scope{Name: status, Handler: func(db *gorm.DB, s *admin.Searcher, ctx *qor.Context) *gorm.DB {
+			worker.JobResource.Scope(&admin.Scope{Name: status, Handler: func(db *aorm.DB, s *admin.Searcher, ctx *qor.Context) *aorm.DB {
 				return db.Where("status = ?", status)
 			}})
 		}
 
 		// default scope
 		worker.JobResource.Scope(&admin.Scope{
-			Handler: func(db *gorm.DB, s *admin.Searcher, ctx *qor.Context) *gorm.DB {
+			Handler: func(db *aorm.DB, s *admin.Searcher, ctx *qor.Context) *aorm.DB {
 				db = db.Where("site_name = ?", ctx.Site.Name())
 
 				if jobName := ctx.Request.URL.Query().Get("job"); jobName != "" {
@@ -363,11 +363,11 @@ func (worker *Worker) ParseJobUID(uid string) (site qor.SiteInterface, jobID str
 	return
 }
 
-func (worker *Worker) ToDB(db *gorm.DB) *gorm.DB {
+func (worker *Worker) ToDB(db *aorm.DB) *aorm.DB {
 	return db.Set("qor:worker.worker", worker)
 }
 
-func WorkerFromDB(db *gorm.DB) *Worker {
+func WorkerFromDB(db *aorm.DB) *Worker {
 	worker, ok := db.Get("qor:worker.worker")
 	if ok {
 		return worker.(*Worker)
