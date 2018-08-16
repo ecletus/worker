@@ -1,0 +1,13 @@
+form:
+  successfully_updated~: "{{.Name}} atualizado com sucesso."
+  successfully_created~: "{{.Name}} criado com sucesso."
+  successfully_killed~: "{{.Name}} interrompido com sucesso."
+  successfully_deleted~: "{{.Name}} excluído com sucesso."
+  failed_to_kill~: "Falhou ao interromper \"{{.Job.Name}}\": {{.Error}}."
+  failed_to_clone~: "Falhou ao clonar {{.}}."
+  run_access_danied~: "Você não tem permissão para executar {{.}}."
+  update_access_danied~: "Você não tem permissão para alterar {{.}}."
+Worker:
+  label*:
+    p: "Processos"
+    s: "Processo"

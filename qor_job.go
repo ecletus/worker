@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/jinzhu/gorm"
-	"github.com/qor/qor"
-	"github.com/qor/admin"
-	"github.com/qor/audited"
-	"github.com/qor/serializable_meta"
+	"github.com/aghape/admin"
+	"github.com/aghape/audited"
+	"github.com/aghape/aghape"
+	"github.com/aghape/serializable_meta"
 )
 
 // QorJobInterface is a interface, defined methods that needs for a qor job
@@ -75,23 +75,24 @@ type TableCell struct {
 
 // QorJob predefined qor job struct, which will be used for Worker, if it doesn't include a job resource
 type QorJob struct {
-	ID           string       `gorm:"size:24;primary_key" serial:"yes"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    *time.Time   `sql:"index"`
+	ID              string `gorm:"size:24;primary_key" serial:"yes"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DeletedAt       *time.Time `sql:"index"`
 	StatusUpdatedAt *time.Time
-	Name         string
-	Status       string       `sql:"default:'new'"`
-	Progress     uint
-	ProgressText string
-	Log          string       `sql:"size:65532"`
-	ResultsTable ResultsTable `sql:"size:65532"`
+	Name            string
+	Status          string `sql:"default:'new'"`
+	Progress        uint
+	ProgressText    string
+	Log             string       `sql:"size:65532"`
+	ResultsTable    ResultsTable `sql:"size:65532"`
+	SiteName        string
 
 	mutex sync.Mutex `sql:"-"`
 	Job   *Job       `sql:"-"`
 	audited.AuditedModel
 	serializable_meta.SerializableMeta
-	site  qor.SiteInterface
+	site qor.SiteInterface
 }
 
 func (job *QorJob) Init(site qor.SiteInterface) {
@@ -129,7 +130,7 @@ func (job *QorJob) GetName() string {
 
 // GetJobName get job's name from a qor job
 func (job *QorJob) GetJobName() string {
-	return job.Job.Name
+	return job.GetJob().Name
 }
 
 func (job *QorJob) GetStatusUpdatedAt() *time.Time {
@@ -155,7 +156,7 @@ func (job *QorJob) SetStatus(status string) error {
 	if status == JobStatusDone {
 		job.Progress = 100
 	}
-	return worker.JobResource.CallSave(job, context)
+	return worker.JobResource.Save(job, context)
 }
 
 // SetJob set `Job` for a qor job instance
@@ -205,7 +206,7 @@ func (job *QorJob) SetProgress(progress uint) error {
 		progress = 100
 	}
 	job.Progress = progress
-	return worker.JobResource.CallSave(job, context)
+	return worker.JobResource.Save(job, context)
 }
 
 // GetProgressText get qor job's progress text
@@ -221,7 +222,7 @@ func (job *QorJob) SetProgressText(str string) error {
 	worker := job.GetJob().Worker
 	context := worker.Admin.NewContext(nil, nil).Context
 	job.ProgressText = str
-	return worker.JobResource.CallSave(job, context)
+	return worker.JobResource.Save(job, context)
 }
 
 // GetLogs get qor job's logs
@@ -239,7 +240,7 @@ func (job *QorJob) AddLog(log string) error {
 	context.SetDB(worker.ToDB(context.DB))
 	fmt.Println(log)
 	job.Log += "\n" + log
-	return worker.JobResource.CallSave(job, context)
+	return worker.JobResource.Save(job, context)
 }
 
 // GetResultsTable get the job's process logs
@@ -256,5 +257,9 @@ func (job *QorJob) AddResultsRow(cells ...TableCell) error {
 	context := job.site.NewContext()
 	context.SetDB(worker.ToDB(context.DB))
 	job.ResultsTable.TableCells = append(job.ResultsTable.TableCells, cells)
-	return worker.JobResource.CallSave(job, context)
+	return worker.JobResource.Save(job, context)
+}
+
+func (job *QorJob) GetID() string {
+	return job.ID
 }

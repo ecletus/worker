@@ -12,7 +12,7 @@ Once registered with QOR Admin, Worker will provide a `Workers` section in the n
 
 The admin interface for a schedulable Job will have an additional `Schedule Time` input, with which administrators can set the scheduled date and time.
 
-[![GoDoc](https://godoc.org/github.com/qor/worker?status.svg)](https://godoc.org/github.com/qor/worker)
+[![GoDoc](https://godoc.org/github.com/aghape/worker?status.svg)](https://godoc.org/github.com/aghape/worker)
 
 ## Documentation
 

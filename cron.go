@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -26,14 +25,15 @@ func (job cronJob) ToString() string {
 
 // Cron implemented a worker Queue based on cronjob
 type Cron struct {
+	CLIArgs  CLIArgs
 	Jobs     []*cronJob
 	CronJobs []string
 	mutex    sync.Mutex `sql:"-"`
 }
 
 // NewCronQueue initialize a Cron queue
-func NewCronQueue() *Cron {
-	return &Cron{}
+func NewCronQueue(cliArgs CLIArgs) *Cron {
+	return &Cron{CLIArgs: cliArgs}
 }
 
 func (cron *Cron) parseJobs() []*cronJob {
@@ -68,7 +68,6 @@ func (cron *Cron) parseJobs() []*cronJob {
 
 func (cron *Cron) writeCronJob() error {
 	defer cron.mutex.Unlock()
-
 	cmd := exec.Command("crontab", "-")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -86,40 +85,40 @@ func (cron *Cron) writeCronJob() error {
 	return cmd.Run()
 }
 
-
 // Add a job to cron queue
 func (cron *Cron) Add(job QorJobInterface) (err error) {
 	cron.parseJobs()
 	defer cron.writeCronJob()
 	jobId := job.UID()
 
-	var binaryFile string
-	if binaryFile, err = filepath.Abs(os.Args[0]); err == nil {
-		var jobs []*cronJob
-		for _, cronJob := range cron.Jobs {
-			if cronJob.JobID != jobId {
-				jobs = append(jobs, cronJob)
-			}
+	var jobs []*cronJob
+	for _, cronJob := range cron.Jobs {
+		if cronJob.JobID != jobId {
+			jobs = append(jobs, cronJob)
 		}
-
-		if scheduler, ok := job.GetArgument().(Scheduler); ok && scheduler.GetScheduleTime() != nil {
-			scheduleTime := scheduler.GetScheduleTime().In(time.Local)
-			job.SetStatus(JobStatusScheduled)
-
-			currentPath, _ := os.Getwd()
-			jobs = append(jobs, &cronJob{
-				JobID:   jobId,
-				Command: fmt.Sprintf("%d %d %d %d * cd %v; %v --qor-job %v\n", scheduleTime.Minute(), scheduleTime.Hour(), scheduleTime.Day(), scheduleTime.Month(), currentPath, binaryFile, job.GetJobID()),
-			})
-		} else {
-			cmd := exec.Command(binaryFile, CLIExecJobArgs(job)...)
-			if err = cmd.Start(); err == nil {
-				jobs = append(jobs, &cronJob{JobID: job.UID(), Pid: cmd.Process.Pid})
-				cmd.Process.Release()
-			}
-		}
-		cron.Jobs = jobs
 	}
+
+	if scheduler, ok := job.GetArgument().(Scheduler); ok && scheduler.GetScheduleTime() != nil {
+		cmdArgs := cron.CLIArgs.ExecJob(job)
+		scheduleTime := scheduler.GetScheduleTime().In(time.Local)
+		job.SetStatus(JobStatusScheduled)
+
+		currentPath, _ := os.Getwd()
+		jobCmd := fmt.Sprintf("%d %d %d %d * cd %v; %v\n", scheduleTime.Minute(), scheduleTime.Hour(),
+			scheduleTime.Day(), scheduleTime.Month(), currentPath, strings.Join(cmdArgs, " "))
+		jobs = append(jobs, &cronJob{
+			JobID:   jobId,
+			Command: jobCmd,
+		})
+	} else {
+		cmdArgs := cron.CLIArgs.ExecJob(job)
+		cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+		if err = cmd.Start(); err == nil {
+			jobs = append(jobs, &cronJob{JobID: job.UID(), Pid: cmd.Process.Pid})
+			cmd.Process.Release()
+		}
+	}
+	cron.Jobs = jobs
 
 	return
 }

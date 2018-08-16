@@ -1,20 +1,23 @@
 package worker
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
-	"time"
-	"strings"
 	"runtime/debug"
-	"crypto/sha256"
+	"strings"
+	"time"
+
+	"os"
 
 	errors2 "github.com/go-errors/errors"
 	"github.com/jinzhu/gorm"
-	"github.com/qor/admin"
-	"github.com/qor/qor"
-	"github.com/qor/qor/resource"
-	"github.com/qor/roles"
-	"github.com/qor/qor/utils"
+	"github.com/moisespsena/go-route"
+	"github.com/aghape/admin"
+	"github.com/aghape/aghape"
+	"github.com/aghape/aghape/resource"
+	"github.com/aghape/aghape/utils"
+	"github.com/aghape/roles"
 )
 
 const (
@@ -45,19 +48,25 @@ func New(config ...*Config) *Worker {
 		cfg.Job = &QorJob{}
 	}
 
-	if cfg.Queue == nil {
-		cfg.Queue = NewCronQueue()
+	if cfg.CLIArgs == nil {
+		cfg.CLIArgs = &CLIArgs{"", []string{os.Args[0]}}
 	}
 
-	return &Worker{Config: cfg, Jobs:make(map[string]*Job)}
+	if cfg.Queue == nil {
+		cfg.Queue = NewCronQueue(*cfg.CLIArgs)
+	}
+
+	return &Worker{Config: cfg, Jobs: make(map[string]*Job)}
 }
 
 // Config worker config
 type Config struct {
-	Sites qor.SitesReaderInterface
-	Queue Queue
-	Job   QorJobInterface
-	Admin *admin.Admin
+	CLIArgs   *CLIArgs
+	Sites     qor.SitesReaderInterface
+	AdminSite string
+	Queue     Queue
+	Job       QorJobInterface
+	Admin     *admin.Admin
 }
 
 // Worker worker definition
@@ -71,11 +80,23 @@ type Worker struct {
 // ConfigureQorResourceBeforeInitialize a method used to config Worker for qor admin
 func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resourcer) {
 	if res, ok := res.(*admin.Resource); ok {
-		res.GetAdmin().RegisterViewPath("github.com/qor/worker/views")
 		res.UseTheme("worker")
 
 		worker.Admin = res.GetAdmin()
-		worker.JobResource = worker.Admin.NewResource(worker.Config.Job)
+		worker.JobResource = worker.Admin.AddResource(worker.Config.Job, &admin.Config{Invisible: true, NotMount: true,
+			Param: "workers"})
+		worker.JobResource.Router.Intersept(&route.Middleware{
+			Name: PREFIX + ".set_worker_to_db",
+			Handler: func(chain *route.ChainHandler) {
+				context := admin.ContextFromChain(chain)
+				context.SetDB(worker.ToDB(context.GetDB()))
+				context.PushI18nGroup(I18NGROUP)
+				defer func() {
+					context.PopI18nGroup()
+				}()
+				chain.Next()
+			},
+		})
 		worker.JobResource.GetMeta("Kind").Type = "hidden"
 		worker.JobResource.UseTheme("worker")
 		worker.JobResource.Meta(&admin.Meta{Name: "Name", Valuer: func(record interface{}, context *qor.Context) interface{} {
@@ -92,8 +113,21 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 			}
 			return job.GetStatus()
 		}})
-		worker.JobResource.NewAttrs("Name", worker.JobResource.NewAttrs())
-		worker.JobResource.EditAttrs("Name", worker.JobResource.EditAttrs())
+
+		worker.JobResource.BeforeSave(&resource.Callback{
+			PREFIX + ".set_site_name",
+			func(resourcer resource.Resourcer, value interface{}, context *qor.Context, parent *resource.Parent) error {
+				value.(*QorJob).SiteName = context.Site.Name()
+				return nil
+			},
+		})
+
+		worker.JobResource.Meta(&admin.Meta{Name: "SiteName", Enabled: func(recorde interface{}, context *admin.Context, meta *admin.Meta) bool {
+			return false
+		}})
+
+		worker.JobResource.NewAttrs("Name", worker.JobResource.NewAttrs(), "-SiteName")
+		worker.JobResource.EditAttrs("Name", worker.JobResource.EditAttrs(), "-SiteName")
 		worker.JobResource.IndexAttrs("ID", "Name", "StatusAndTime", "CreatedAt")
 		worker.JobResource.Name = res.Name
 
@@ -107,6 +141,8 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 		// default scope
 		worker.JobResource.Scope(&admin.Scope{
 			Handler: func(db *gorm.DB, s *admin.Searcher, ctx *qor.Context) *gorm.DB {
+				db = db.Where("site_name = ?", ctx.Site.Name())
+
 				if jobName := ctx.Request.URL.Query().Get("job"); jobName != "" {
 					return db.Where("kind = ?", jobName)
 				}
@@ -127,12 +163,6 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 				return db
 			},
 			Default: true,
-		})
-
-		// Auto Migration
-		worker.Admin.Config.SetupDB(func(db *qor.DB) error {
-			db.DB.AutoMigrate(worker.Config.Job)
-			return nil
 		})
 
 		// Configure jobs
@@ -167,18 +197,32 @@ func (worker *Worker) ConfigureQorResource(res resource.Resourcer) {
 		})
 
 		// configure routes
-		router := worker.Admin.GetRouter()
 		controller := workerController{Worker: worker}
-		jobParamIDName := worker.JobResource.ParamIDName()
 
-		router.Get(res.ToParam(), controller.Index, &admin.RouteConfig{Resource: worker.JobResource})
-		router.Get(res.ToParam()+"/new", controller.New, &admin.RouteConfig{Resource: worker.JobResource})
-		router.Get(fmt.Sprintf("%v/%v", res.ToParam(), jobParamIDName), controller.Show, &admin.RouteConfig{Resource: worker.JobResource})
-		router.Get(fmt.Sprintf("%v/%v/edit", res.ToParam(), jobParamIDName), controller.Show, &admin.RouteConfig{Resource: worker.JobResource})
-		router.Post(fmt.Sprintf("%v/%v/run", res.ToParam(), jobParamIDName), controller.RunJob, &admin.RouteConfig{Resource: worker.JobResource})
-		router.Post(res.ToParam(), controller.AddJob, &admin.RouteConfig{Resource: worker.JobResource})
-		router.Put(fmt.Sprintf("%v/%v", res.ToParam(), jobParamIDName), controller.Update, &admin.RouteConfig{Resource: worker.JobResource})
-		router.Delete(fmt.Sprintf("%v/%v", res.ToParam(), jobParamIDName), controller.KillJob, &admin.RouteConfig{Resource: worker.JobResource})
+		handler := func(h admin.Handler) *admin.RouteHandler {
+			rh := admin.NewHandler(h, &admin.RouteConfig{Resource: worker.JobResource})
+			rh.Intercept(func(chain *admin.Chain) {
+				chain.Context.PushI18nGroup(I18NGROUP)
+				defer func() {
+					chain.Context.PopI18nGroup()
+				}()
+				chain.Context.SetNewResourceForPath(res)
+				chain.Context.SetDB(worker.ToDB(chain.Context.GetDB()))
+				chain.Next()
+			})
+			return rh
+		}
+
+		res.Router.Get("/", handler(controller.Index))
+		res.Router.Get("/new", handler(controller.New))
+		res.Router.Post("/", handler(controller.AddJob))
+
+		res.ObjectRouter.Get("/", handler(controller.Show))
+		res.ObjectRouter.Get("/edit", handler(controller.Show))
+		res.ObjectRouter.Post("/run", handler(controller.RunJob))
+		res.ObjectRouter.Put("/", handler(controller.Update))
+		res.ObjectRouter.Delete("/", handler(controller.DeleteJob))
+		res.ObjectRouter.Post("/kill", handler(controller.KillJob))
 	}
 }
 
@@ -216,11 +260,11 @@ func (worker *Worker) GetJob(site qor.SiteInterface, jobID string) (QorJobInterf
 	qorJob := worker.JobResource.NewStruct(site).(QorJobInterface)
 
 	context := worker.Admin.NewContext(site)
-	context.SetDB(worker.ToDB(context.DB))
+	context.SetDB(worker.ToDB(context.GetDB()))
 	context.ResourceID = jobID
 	context.Resource = worker.JobResource
 
-	if err := worker.JobResource.FindOneHandler(qorJob, nil, context.Context); err == nil {
+	if err := worker.JobResource.CallFindOneHandler(worker.JobResource, qorJob, nil, context.Context); err == nil {
 		if qorJob.GetJob() != nil {
 			return qorJob, nil
 		}
@@ -271,7 +315,9 @@ func (worker *Worker) saveAnotherJob(site qor.SiteInterface, jobID string) QorJo
 		newJob := jobResource.NewStruct(site).(QorJobInterface)
 		newJob.SetJob(job.GetJob())
 		newJob.SetSerializableArgumentValue(job.GetArgument())
-		if err := jobResource.CallSave(newJob, &qor.Context{Site:site}); err == nil {
+		context := site.PrepareContext(&qor.Context{})
+		context.SetDB(worker.ToDB(context.DB))
+		if err := jobResource.Save(newJob, context); err == nil {
 			return newJob
 		}
 	}
