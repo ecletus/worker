@@ -1,13 +1,14 @@
 package worker
 
 import (
-	"github.com/aghape/plug"
-	"github.com/aghape/db"
 	"github.com/aghape/cli"
+	"github.com/aghape/db"
+	"github.com/aghape/plug"
 )
 
 type Plugin struct {
-	db.DisDBNames
+	db.DBNames
+	plug.EventDispatcher
 	WorkerKey string
 }
 
@@ -16,7 +17,7 @@ func (p *Plugin) RequireOptions() []string {
 }
 
 func (p *Plugin) OnRegister() {
-	p.DBOnMigrateGorm(func(e *db.GormDBEvent) error {
+	db.Events(p).DBOnMigrateGorm(func(e *db.GormDBEvent) error {
 		worker := e.Options().GetInterface(p.WorkerKey).(*Worker)
 		return e.DB.AutoMigrate(worker.Config.Job).Error
 	})
