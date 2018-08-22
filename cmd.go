@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/moisespsena/go-error-wrap"
-	"github.com/aghape/aghape"
+	"github.com/aghape/core"
 	"github.com/spf13/cobra"
 )
 
@@ -43,7 +43,7 @@ func (worker *Worker) CreateCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			siteName, _ := cmd.Flags().GetString("site")
-			err := worker.Sites.EachOrAll(siteName, func(site qor.SiteInterface) (bool, error) {
+			err := worker.Sites.EachOrAll(siteName, func(site core.SiteInterface) (bool, error) {
 				// TODO: List Running, By State ...
 				return true, nil
 			})

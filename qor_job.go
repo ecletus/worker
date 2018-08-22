@@ -12,13 +12,13 @@ import (
 	"github.com/moisespsena-go/aorm"
 	"github.com/aghape/admin"
 	"github.com/aghape/audited"
-	"github.com/aghape/aghape"
+	"github.com/aghape/core"
 	"github.com/aghape/serializable_meta"
 )
 
 // QorJobInterface is a interface, defined methods that needs for a qor job
 type QorJobInterface interface {
-	Site() qor.SiteInterface
+	Site() core.SiteInterface
 	UID() string
 	GetJobID() string
 	GetJobKey() string
@@ -92,19 +92,19 @@ type QorJob struct {
 	Job   *Job       `sql:"-"`
 	audited.AuditedModel
 	serializable_meta.SerializableMeta
-	site qor.SiteInterface
+	site core.SiteInterface
 }
 
-func (job *QorJob) Init(site qor.SiteInterface) {
+func (job *QorJob) Init(site core.SiteInterface) {
 	job.site = site
 }
 
 func (job *QorJob) AfterScan(db *aorm.DB) {
-	job.site = qor.GetSiteFromDB(db)
+	job.site = core.GetSiteFromDB(db)
 	job.Job = WorkerFromDB(db).GetRegisteredJob(job.Kind)
 }
 
-func (job *QorJob) Site() qor.SiteInterface {
+func (job *QorJob) Site() core.SiteInterface {
 	return job.site
 }
 

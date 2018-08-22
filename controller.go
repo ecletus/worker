@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/aghape/admin"
-	"github.com/aghape/aghape/utils/httputils"
+	"github.com/aghape/core/utils/httputils"
 	"github.com/aghape/responder"
 	"github.com/aghape/roles"
 )

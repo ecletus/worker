@@ -2,7 +2,7 @@ package worker
 
 import (
 	"github.com/aghape/admin"
-	"github.com/aghape/aghape"
+	"github.com/aghape/core"
 	"github.com/aghape/roles"
 )
 
@@ -19,7 +19,7 @@ type Job struct {
 }
 
 // NewStruct initialize job struct
-func (job *Job) NewStruct(site qor.SiteInterface) interface{} {
+func (job *Job) NewStruct(site core.SiteInterface) interface{} {
 	qorJobInterface := job.Worker.JobResource.NewStruct(site).(QorJobInterface)
 	qorJobInterface.SetJob(job)
 	return qorJobInterface
@@ -33,7 +33,7 @@ func (job *Job) GetQueue() Queue {
 	return job.Worker.Queue
 }
 
-func (job Job) HasPermission(mode roles.PermissionMode, context *qor.Context) bool {
+func (job Job) HasPermission(mode roles.PermissionMode, context *core.Context) bool {
 	if job.Permission == nil {
 		return true
 	}
