@@ -9,11 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moisespsena-go/aorm"
 	"github.com/aghape/admin"
-	"github.com/aghape/audited"
 	"github.com/aghape/core"
 	"github.com/aghape/serializable_meta"
+	"github.com/moisespsena-go/aorm"
 )
 
 // QorJobInterface is a interface, defined methods that needs for a qor job
@@ -75,10 +74,7 @@ type TableCell struct {
 
 // QorJob predefined qor job struct, which will be used for Worker, if it doesn't include a job resource
 type QorJob struct {
-	ID              string `gorm:"size:24;primary_key" serial:"yes"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	DeletedAt       *time.Time `sql:"index"`
+	aorm.AuditedModel
 	StatusUpdatedAt *time.Time
 	Name            string
 	Status          string `sql:"default:'new'"`
@@ -90,7 +86,6 @@ type QorJob struct {
 
 	mutex sync.Mutex `sql:"-"`
 	Job   *Job       `sql:"-"`
-	audited.AuditedModel
 	serializable_meta.SerializableMeta
 	site core.SiteInterface
 }
