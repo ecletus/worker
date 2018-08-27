@@ -151,7 +151,7 @@ func (job *QorJob) SetStatus(status string) error {
 	if status == JobStatusDone {
 		job.Progress = 100
 	}
-	return worker.JobResource.Save(job, context)
+	return worker.JobResource.Crud(context).Update(job)
 }
 
 // SetJob set `Job` for a qor job instance
@@ -201,7 +201,7 @@ func (job *QorJob) SetProgress(progress uint) error {
 		progress = 100
 	}
 	job.Progress = progress
-	return worker.JobResource.Save(job, context)
+	return worker.JobResource.Crud(context).Update(job)
 }
 
 // GetProgressText get qor job's progress text
@@ -217,7 +217,7 @@ func (job *QorJob) SetProgressText(str string) error {
 	worker := job.GetJob().Worker
 	context := worker.Admin.NewContext(nil, nil).Context
 	job.ProgressText = str
-	return worker.JobResource.Save(job, context)
+	return worker.JobResource.Crud(context).Update(job)
 }
 
 // GetLogs get qor job's logs
@@ -235,7 +235,7 @@ func (job *QorJob) AddLog(log string) error {
 	context.SetDB(worker.ToDB(context.DB))
 	fmt.Println(log)
 	job.Log += "\n" + log
-	return worker.JobResource.Save(job, context)
+	return worker.JobResource.Crud(context).Update(job)
 }
 
 // GetResultsTable get the job's process logs
@@ -252,7 +252,7 @@ func (job *QorJob) AddResultsRow(cells ...TableCell) error {
 	context := job.site.NewContext()
 	context.SetDB(worker.ToDB(context.DB))
 	job.ResultsTable.TableCells = append(job.ResultsTable.TableCells, cells)
-	return worker.JobResource.Save(job, context)
+	return worker.JobResource.Crud(context).Update(job)
 }
 
 func (job *QorJob) GetID() string {

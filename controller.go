@@ -45,7 +45,7 @@ func (wc workerController) Update(context *admin.Context) {
 		if job.GetStatus() == JobStatusScheduled || job.GetStatus() == JobStatusNew {
 			if job.GetJob().HasPermission(roles.Update, context.Context) {
 				if context.AddError(wc.Worker.JobResource.Decode(context.Context, job)); !context.HasError() {
-					context.AddError(wc.Worker.JobResource.Save(job, context.Context))
+					context.AddError(wc.Worker.JobResource.Crud(context.Context).Update(job))
 					context.AddError(wc.Worker.AddJob(job))
 				}
 
@@ -79,7 +79,7 @@ func (wc workerController) AddJob(context *admin.Context) {
 	if context.AddError(jobResource.Decode(context.Context, result)); !context.HasError() {
 		// ensure job name is correct
 		result.SetJob(job)
-		context.AddError(jobResource.Save(result, context.Context))
+		context.AddError(jobResource.Crud(context.Context).SaveOrCreate(result))
 		context.AddError(wc.Worker.AddJob(result))
 	}
 
@@ -127,7 +127,7 @@ func (wc workerController) DeleteJob(context *admin.Context) {
 		if qorJob.GetStatus() == JobStatusRunning {
 			context.Flash(string(context.Admin.TT(context.Context, I18NGROUP+".form.job_is_running", wc.JobResource)), "error")
 		} else {
-			if err = wc.JobResource.Delete(qorJob, context.Context); err == nil {
+			if err = wc.JobResource.Crud(context.Context).Delete(qorJob); err == nil {
 				context.Flash(string(context.Admin.TT(context.Context, I18NGROUP+".form.successfully_deleted", wc.JobResource)), "success")
 			} else {
 				context.AddError(err)

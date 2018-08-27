@@ -10,14 +10,14 @@ import (
 
 	"os"
 
-	errors2 "github.com/go-errors/errors"
-	"github.com/moisespsena-go/aorm"
-	"github.com/moisespsena/go-route"
 	"github.com/aghape/admin"
 	"github.com/aghape/core"
 	"github.com/aghape/core/resource"
 	"github.com/aghape/core/utils"
 	"github.com/aghape/roles"
+	errors2 "github.com/go-errors/errors"
+	"github.com/moisespsena-go/aorm"
+	"github.com/moisespsena/go-route"
 )
 
 const (
@@ -114,13 +114,9 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 			return job.GetStatus()
 		}})
 
-		worker.JobResource.BeforeSave(&resource.Callback{
-			PREFIX + ".set_site_name",
-			func(resourcer resource.Resourcer, value interface{}, context *core.Context, parent *resource.Parent) error {
-				value.(*QorJob).SiteName = context.Site.Name()
-				return nil
-			},
-		})
+		worker.JobResource.OnDBAction(func(e *resource.DBEvent) {
+			e.Result().(*QorJob).SiteName = e.Context.Site.Name()
+		}, resource.E_DB_ACTION_CREATE.Before(), resource.E_DB_ACTION_SAVE.Before())
 
 		worker.JobResource.Meta(&admin.Meta{Name: "SiteName", Enabled: func(recorde interface{}, context *admin.Context, meta *admin.Meta) bool {
 			return false
@@ -264,7 +260,7 @@ func (worker *Worker) GetJob(site core.SiteInterface, jobID string) (QorJobInter
 	context.ResourceID = jobID
 	context.Resource = worker.JobResource
 
-	if err := worker.JobResource.CallFindOneHandler(worker.JobResource, qorJob, nil, context.Context); err == nil {
+	if err := worker.JobResource.Crud(context.Context).FindOne(qorJob); err == nil {
 		if qorJob.GetJob() != nil {
 			return qorJob, nil
 		}
@@ -317,7 +313,7 @@ func (worker *Worker) saveAnotherJob(site core.SiteInterface, jobID string) QorJ
 		newJob.SetSerializableArgumentValue(job.GetArgument())
 		context := site.PrepareContext(&core.Context{})
 		context.SetDB(worker.ToDB(context.DB))
-		if err := jobResource.Save(newJob, context); err == nil {
+		if err := jobResource.Crud(context).Create(newJob); err == nil {
 			return newJob
 		}
 	}
