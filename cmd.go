@@ -43,9 +43,9 @@ func (worker *Worker) CreateCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			siteName, _ := cmd.Flags().GetString("site")
-			err := worker.Sites.EachOrAll(siteName, func(site core.SiteInterface) (bool, error) {
+			err := worker.Sites.EachOrAll(siteName, func(site core.SiteInterface) (error) {
 				// TODO: List Running, By State ...
-				return true, nil
+				return nil
 			})
 			if err != nil {
 				fmt.Println(err)

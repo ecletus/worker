@@ -17,7 +17,7 @@ import (
 	"github.com/aghape/roles"
 	errors2 "github.com/go-errors/errors"
 	"github.com/moisespsena-go/aorm"
-	"github.com/moisespsena/go-route"
+	"github.com/moisespsena-go/xroute"
 )
 
 const (
@@ -85,9 +85,9 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 		worker.Admin = res.GetAdmin()
 		worker.JobResource = worker.Admin.AddResource(worker.Config.Job, &admin.Config{Invisible: true, NotMount: true,
 			Param: "workers"})
-		worker.JobResource.Router.Intersept(&route.Middleware{
+		worker.JobResource.Router.Intersept(&xroute.Middleware{
 			Name: PREFIX + ".set_worker_to_db",
-			Handler: func(chain *route.ChainHandler) {
+			Handler: func(chain *xroute.ChainHandler) {
 				context := admin.ContextFromChain(chain)
 				context.SetDB(worker.ToDB(context.GetDB()))
 				context.PushI18nGroup(I18NGROUP)
@@ -181,7 +181,7 @@ func (worker *Worker) ConfigureQorResource(res resource.Resourcer) {
 			var groupName = context.Request.URL.Query().Get("group")
 			var jobName = context.Request.URL.Query().Get("job")
 			for _, job := range worker.Jobs {
-				if !(job.HasPermission(roles.Read, context.Context) && job.HasPermission(roles.Create, context.Context)) {
+				if !(core.HasPermission(job, roles.Read, context.Context) && core.HasPermission(job, roles.Create, context.Context)) {
 					continue
 				}
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/aghape/admin"
+	"github.com/aghape/core"
 	"github.com/aghape/core/utils/httputils"
 	"github.com/aghape/responder"
 	"github.com/aghape/roles"
@@ -43,7 +44,7 @@ func (wc workerController) New(context *admin.Context) {
 func (wc workerController) Update(context *admin.Context) {
 	if job, err := wc.GetJob(context.Site, context.ResourceID); err == nil {
 		if job.GetStatus() == JobStatusScheduled || job.GetStatus() == JobStatusNew {
-			if job.GetJob().HasPermission(roles.Update, context.Context) {
+			if core.HasPermission(job.GetJob(), roles.Update, context.Context) {
 				if context.AddError(wc.Worker.JobResource.Decode(context.Context, job)); !context.HasError() {
 					context.AddError(wc.Worker.JobResource.Crud(context.Context).Update(job))
 					context.AddError(wc.Worker.AddJob(job))
@@ -72,7 +73,7 @@ func (wc workerController) AddJob(context *admin.Context) {
 	job := wc.Worker.GetRegisteredJob(context.Request.Form.Get("QorResource.Kind"))
 	result.SetJob(job)
 
-	if !job.HasPermission(roles.Create, context.Context) {
+	if !core.HasPermission(job, roles.Create, context.Context) {
 		context.AddError(errors.New(string(context.Admin.TT(context.Context, I18NGROUP+".form.run_access_danied", context.ResourceID))))
 	}
 

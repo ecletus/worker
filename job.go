@@ -33,13 +33,13 @@ func (job *Job) GetQueue() Queue {
 	return job.Worker.Queue
 }
 
-func (job Job) HasPermission(mode roles.PermissionMode, context *core.Context) bool {
+func (job Job) HasPermissionE(mode roles.PermissionMode, context *core.Context) (ok bool, err error) {
 	if job.Permission == nil {
-		return true
+		return true, roles.ErrDefaultPermission
 	}
-	var roles = []interface{}{}
+	var roles_ = []interface{}{}
 	for _, role := range context.Roles {
-		roles = append(roles, role)
+		roles_ = append(roles_, role)
 	}
-	return job.Permission.HasPermission(mode, roles...)
+	return roles.HasPermissionDefaultE(true, job.Permission, mode, roles_...)
 }

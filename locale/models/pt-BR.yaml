@@ -1,0 +1,4 @@
+Worker:
+  label*:
+    p: "Processos"
+    s: "Processo"

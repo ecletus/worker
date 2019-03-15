@@ -17,9 +17,9 @@ func (p *Plugin) RequireOptions() []string {
 }
 
 func (p *Plugin) OnRegister() {
-	db.Events(p).DBOnMigrateGorm(func(e *db.GormDBEvent) error {
+	db.Events(p).DBOnMigrate(func(e *db.DBEvent) error {
 		worker := e.Options().GetInterface(p.WorkerKey).(*Worker)
-		return e.DB.AutoMigrate(worker.Config.Job).Error
+		return e.AutoMigrate(worker.Config.Job).Error
 	})
 	p.On(cli.E_REGISTER, func(e plug.PluginEventInterface) {
 		worker := e.Options().GetInterface(p.WorkerKey).(*Worker)
