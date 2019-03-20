@@ -1,9 +1,9 @@
 package worker
 
 import (
-	"github.com/aghape/admin"
-	"github.com/aghape/core"
-	"github.com/aghape/roles"
+	"github.com/ecletus/admin"
+	"github.com/ecletus/core"
+	"github.com/ecletus/roles"
 )
 
 // Job is a struct that hold Qor Job definations

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aghape/admin"
-	"github.com/aghape/core"
-	"github.com/aghape/serializable_meta"
+	"github.com/ecletus/admin"
+	"github.com/ecletus/core"
+	"github.com/ecletus/serializable_meta"
 	"github.com/moisespsena-go/aorm"
 )
 

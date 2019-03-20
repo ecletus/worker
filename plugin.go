@@ -1,9 +1,9 @@
 package worker
 
 import (
-	"github.com/aghape/cli"
-	"github.com/aghape/db"
-	"github.com/aghape/plug"
+	"github.com/ecletus/cli"
+	"github.com/ecletus/db"
+	"github.com/ecletus/plug"
 )
 
 type Plugin struct {

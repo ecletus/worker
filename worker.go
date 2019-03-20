@@ -10,11 +10,11 @@ import (
 
 	"os"
 
-	"github.com/aghape/admin"
-	"github.com/aghape/core"
-	"github.com/aghape/core/resource"
-	"github.com/aghape/core/utils"
-	"github.com/aghape/roles"
+	"github.com/ecletus/admin"
+	"github.com/ecletus/core"
+	"github.com/ecletus/core/resource"
+	"github.com/ecletus/core/utils"
+	"github.com/ecletus/roles"
 	errors2 "github.com/go-errors/errors"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena-go/xroute"
