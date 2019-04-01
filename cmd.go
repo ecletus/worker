@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/moisespsena/go-error-wrap"
+	"github.com/moisespsena-go/error-wrap"
 	"github.com/ecletus/core"
 	"github.com/spf13/cobra"
 )
