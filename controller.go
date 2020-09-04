@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/ecletus/admin"
-	"github.com/ecletus/core"
 	"github.com/ecletus/core/utils/httputils"
 	"github.com/ecletus/responder"
 	"github.com/ecletus/roles"
@@ -44,7 +43,7 @@ func (wc workerController) New(context *admin.Context) {
 func (wc workerController) Update(context *admin.Context) {
 	if job, err := wc.GetJob(context.Site, context.ResourceID); err == nil {
 		if job.GetStatus() == JobStatusScheduled || job.GetStatus() == JobStatusNew {
-			if core.HasPermission(job.GetJob(), roles.Update, context.Context) {
+			if context.HasPermission(job.GetJob(), roles.Update) {
 				if context.AddError(wc.Worker.JobResource.Decode(context.Context, job)); !context.HasError() {
 					context.AddError(wc.Worker.JobResource.Crud(context.Context).Update(job))
 					context.AddError(wc.Worker.AddJob(job))
@@ -73,7 +72,7 @@ func (wc workerController) AddJob(context *admin.Context) {
 	job := wc.Worker.GetRegisteredJob(context.Request.Form.Get("QorResource.Kind"))
 	result.SetJob(job)
 
-	if !core.HasPermission(job, roles.Create, context.Context) {
+	if !context.HasPermission(job, roles.Create) {
 		context.AddError(errors.New(string(context.Admin.TT(context.Context, I18NGROUP+".form.run_access_danied", context.ResourceID))))
 	}
 
@@ -111,7 +110,8 @@ func (wc workerController) RunJob(context *admin.Context) {
 
 func (wc workerController) KillJob(context *admin.Context) {
 	if qorJob, err := wc.Worker.GetJob(context.Site, context.ResourceID); err == nil {
-		err = wc.Worker.KillJob(context.Site, qorJob.GetJobID())
+		// TODO: implements
+		// err = wc.Worker.KillJob(context.Site, qorJob.GetJobID())
 		if err == nil {
 			context.Flash(string(context.Admin.TT(context.Context, I18NGROUP+".form.successfully_killed", wc.JobResource)), "success")
 		} else {

@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moisespsena-go/bid"
+
 	"github.com/ecletus/admin"
 	"github.com/ecletus/core"
 	"github.com/ecletus/serializable_meta"
@@ -17,9 +19,9 @@ import (
 
 // QorJobInterface is a interface, defined methods that needs for a qor job
 type QorJobInterface interface {
-	Site() core.SiteInterface
+	Site() *core.Site
 	UID() string
-	GetJobID() string
+	GetJobID() bid.BID
 	GetJobKey() string
 	GetJobName() string
 	GetName() string
@@ -87,10 +89,10 @@ type QorJob struct {
 	mutex sync.Mutex `sql:"-"`
 	Job   *Job       `sql:"-"`
 	serializable_meta.SerializableMeta
-	site core.SiteInterface
+	site *core.Site
 }
 
-func (job *QorJob) Init(site core.SiteInterface) {
+func (job *QorJob) Init(site *core.Site) {
 	job.site = site
 }
 
@@ -99,7 +101,7 @@ func (job *QorJob) AfterScan(db *aorm.DB) {
 	job.Job = WorkerFromDB(db).GetRegisteredJob(job.Kind)
 }
 
-func (job *QorJob) Site() core.SiteInterface {
+func (job *QorJob) Site() *core.Site {
 	return job.site
 }
 
@@ -109,7 +111,7 @@ func (job *QorJob) GetJobKey() string {
 }
 
 // GetJobID get job's ID from a qor job
-func (job *QorJob) GetJobID() string {
+func (job *QorJob) GetJobID() bid.BID {
 	return job.ID
 }
 
@@ -146,7 +148,7 @@ func (job *QorJob) SetStatus(status string) error {
 
 	worker := job.GetJob().Worker
 	context := job.site.NewContext()
-	context.SetDB(worker.ToDB(context.DB))
+	context.SetDB(worker.ToDB(context.DB()))
 	job.Status = status
 	if status == JobStatusDone {
 		job.Progress = 100
@@ -196,7 +198,7 @@ func (job *QorJob) SetProgress(progress uint) error {
 
 	worker := job.GetJob().Worker
 	context := job.site.NewContext()
-	context.SetDB(worker.ToDB(context.DB))
+	context.SetDB(worker.ToDB(context.DB()))
 	if progress > 100 {
 		progress = 100
 	}
@@ -232,7 +234,7 @@ func (job *QorJob) AddLog(log string) error {
 
 	worker := job.GetJob().Worker
 	context := job.site.NewContext()
-	context.SetDB(worker.ToDB(context.DB))
+	context.SetDB(worker.ToDB(context.DB()))
 	fmt.Println(log)
 	job.Log += "\n" + log
 	return worker.JobResource.Crud(context).Update(job)
@@ -250,11 +252,11 @@ func (job *QorJob) AddResultsRow(cells ...TableCell) error {
 
 	worker := job.GetJob().Worker
 	context := job.site.NewContext()
-	context.SetDB(worker.ToDB(context.DB))
+	context.SetDB(worker.ToDB(context.DB()))
 	job.ResultsTable.TableCells = append(job.ResultsTable.TableCells, cells)
 	return worker.JobResource.Crud(context).Update(job)
 }
 
 func (job *QorJob) GetID() string {
-	return job.ID
+	return job.ID.String()
 }

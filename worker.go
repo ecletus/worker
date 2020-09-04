@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"os"
@@ -62,7 +61,7 @@ func New(config ...*Config) *Worker {
 // Config worker config
 type Config struct {
 	CLIArgs   *CLIArgs
-	Sites     core.SitesReaderInterface
+	Sites     *core.SitesRegister
 	AdminSite string
 	Queue     Queue
 	Job       QorJobInterface
@@ -78,7 +77,7 @@ type Worker struct {
 }
 
 // ConfigureQorResourceBeforeInitialize a method used to config Worker for qor admin
-func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resourcer) {
+func (worker *Worker) ConfigureResourceBeforeInitialize(res resource.Resourcer) {
 	if res, ok := res.(*admin.Resource); ok {
 		res.UseTheme("worker")
 
@@ -88,8 +87,8 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 		worker.JobResource.Router.Intersept(&xroute.Middleware{
 			Name: PREFIX + ".set_worker_to_db",
 			Handler: func(chain *xroute.ChainHandler) {
-				context := admin.ContextFromChain(chain)
-				context.SetDB(worker.ToDB(context.GetDB()))
+				context := admin.ContextFromRequest(chain.Request())
+				context.SetDB(worker.ToDB(context.DB()))
 				context.PushI18nGroup(I18NGROUP)
 				defer func() {
 					context.PopI18nGroup()
@@ -116,7 +115,7 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 
 		worker.JobResource.OnDBAction(func(e *resource.DBEvent) {
 			e.Result().(*QorJob).SiteName = e.Context.Site.Name()
-		}, resource.E_DB_ACTION_CREATE.Before(), resource.E_DB_ACTION_SAVE.Before())
+		}, resource.E_DB_ACTION_CREATE.Before(), resource.E_DB_ACTION_UPDATE.Before())
 
 		worker.JobResource.Meta(&admin.Meta{Name: "SiteName", Enabled: func(recorde interface{}, context *admin.Context, meta *admin.Meta) bool {
 			return false
@@ -170,8 +169,8 @@ func (worker *Worker) ConfigureQorResourceBeforeInitialize(res resource.Resource
 	}
 }
 
-// ConfigureQorResource a method used to config Worker for qor admin
-func (worker *Worker) ConfigureQorResource(res resource.Resourcer) {
+// ConfigureResource a method used to config Worker for qor admin
+func (worker *Worker) ConfigureResource(res resource.Resourcer) {
 	if res, ok := res.(*admin.Resource); ok {
 		worker.mounted = true
 
@@ -181,7 +180,7 @@ func (worker *Worker) ConfigureQorResource(res resource.Resourcer) {
 			var groupName = context.Request.URL.Query().Get("group")
 			var jobName = context.Request.URL.Query().Get("job")
 			for _, job := range worker.Jobs {
-				if !(core.HasPermission(job, roles.Read, context.Context) && core.HasPermission(job, roles.Create, context.Context)) {
+				if !(context.HasPermission(job, roles.Read, roles.Create)) {
 					continue
 				}
 
@@ -203,7 +202,7 @@ func (worker *Worker) ConfigureQorResource(res resource.Resourcer) {
 					chain.Context.PopI18nGroup()
 				}()
 				chain.Context.SetNewResourceForPath(res)
-				chain.Context.SetDB(worker.ToDB(chain.Context.GetDB()))
+				chain.Context.SetDB(worker.ToDB(chain.Context.DB()))
 				chain.Next()
 			})
 			return rh
@@ -213,12 +212,12 @@ func (worker *Worker) ConfigureQorResource(res resource.Resourcer) {
 		res.Router.Get("/new", handler(controller.New))
 		res.Router.Post("/", handler(controller.AddJob))
 
-		res.ObjectRouter.Get("/", handler(controller.Show))
-		res.ObjectRouter.Get("/edit", handler(controller.Show))
-		res.ObjectRouter.Post("/run", handler(controller.RunJob))
-		res.ObjectRouter.Put("/", handler(controller.Update))
-		res.ObjectRouter.Delete("/", handler(controller.DeleteJob))
-		res.ObjectRouter.Post("/kill", handler(controller.KillJob))
+		res.ItemRouter.Get("/", handler(controller.Show))
+		res.ItemRouter.Get("/edit", handler(controller.Show))
+		res.ItemRouter.Post("/run", handler(controller.RunJob))
+		res.ItemRouter.Put("/", handler(controller.Update))
+		res.ItemRouter.Delete("/", handler(controller.DeleteJob))
+		res.ItemRouter.Post("/kill", handler(controller.KillJob))
 	}
 }
 
@@ -252,11 +251,11 @@ func (worker *Worker) GetRegisteredJob(name string) *Job {
 }
 
 // GetJob get job with id
-func (worker *Worker) GetJob(site core.SiteInterface, jobID string) (QorJobInterface, error) {
+func (worker *Worker) GetJob(site *core.Site, jobID aorm.ID) (QorJobInterface, error) {
 	qorJob := worker.JobResource.NewStruct(site).(QorJobInterface)
 
 	context := worker.Admin.NewContext(site)
-	context.SetDB(worker.ToDB(context.GetDB()))
+	context.SetDB(worker.ToDB(context.DB()))
 	context.ResourceID = jobID
 	context.Resource = worker.JobResource
 
@@ -275,7 +274,7 @@ func (worker *Worker) AddJob(qorJob QorJobInterface) error {
 }
 
 // RunJob run job with job id
-func (worker *Worker) RunJob(site core.SiteInterface, jobID string) error {
+func (worker *Worker) RunJob(site *core.Site, jobID aorm.ID) error {
 	qorJob, err := worker.GetJob(site, jobID)
 
 	if err == nil {
@@ -304,7 +303,7 @@ func (worker *Worker) RunJob(site core.SiteInterface, jobID string) error {
 	return err
 }
 
-func (worker *Worker) saveAnotherJob(site core.SiteInterface, jobID string) QorJobInterface {
+func (worker *Worker) saveAnotherJob(site *core.Site, jobID aorm.ID) QorJobInterface {
 	job, err := worker.GetJob(site, jobID)
 	if err == nil {
 		jobResource := worker.JobResource
@@ -312,7 +311,7 @@ func (worker *Worker) saveAnotherJob(site core.SiteInterface, jobID string) QorJ
 		newJob.SetJob(job.GetJob())
 		newJob.SetSerializableArgumentValue(job.GetArgument())
 		context := site.PrepareContext(&core.Context{})
-		context.SetDB(worker.ToDB(context.DB))
+		context.SetDB(worker.ToDB(context.DB()))
 		if err := jobResource.Crud(context).Create(newJob); err == nil {
 			return newJob
 		}
@@ -321,7 +320,7 @@ func (worker *Worker) saveAnotherJob(site core.SiteInterface, jobID string) QorJ
 }
 
 // KillJob kill job with job id
-func (worker *Worker) KillJob(site core.SiteInterface, jobID string) error {
+func (worker *Worker) KillJob(site *core.Site, jobID aorm.ID) error {
 	if qorJob, err := worker.GetJob(site, jobID); err == nil {
 		if qorJob.GetStatus() == JobStatusRunning {
 			if err = qorJob.GetJob().GetQueue().Kill(qorJob); err == nil {
@@ -341,7 +340,7 @@ func (worker *Worker) KillJob(site core.SiteInterface, jobID string) error {
 }
 
 // RemoveJob remove job with job id
-func (worker *Worker) RemoveJob(site core.SiteInterface, jobID string) error {
+func (worker *Worker) RemoveJob(site *core.Site, jobID aorm.ID) error {
 	qorJob, err := worker.GetJob(site, jobID)
 	if err == nil {
 		return qorJob.GetJob().GetQueue().Remove(qorJob)
@@ -349,13 +348,14 @@ func (worker *Worker) RemoveJob(site core.SiteInterface, jobID string) error {
 	return err
 }
 
-func (worker *Worker) ParseJobUID(uid string) (site core.SiteInterface, jobID string, err error) {
-	parts := strings.Split(uid, "@")
+func (worker *Worker) ParseJobUID(uid string) (site *core.Site, jobID aorm.ID, err error) {
+	/*parts := strings.Split(uid, "@")
 	if len(parts) != 2 {
-		return nil, "", fmt.Errorf("Invalid uid %q.", uid)
+		return nil, nil, fmt.Errorf("Invalid uid %q.", uid)
 	}
-	siteName, jobID := parts[0], parts[1]
-	site, err = worker.Sites.GetOrError(siteName)
+	var siteName string
+	siteName, jobID = parts[0], aorm.StrID(parts[1])
+	site, err = worker.Sites.Reader().GetOrError(siteName)*/
 	return
 }
 
@@ -376,14 +376,14 @@ func JobUID(site interface{}, job interface{}) string {
 	switch st := site.(type) {
 	case string:
 		siteName = st
-	case core.SiteInterface:
+	case *core.Site:
 		siteName = st.Name()
 	}
 	switch jb := job.(type) {
 	case string:
 		jobId = jb
 	case QorJobInterface:
-		jobId = jb.GetJobID()
+		jobId = jb.GetJobID().String()
 	}
 	return siteName + "@" + jobId
 }

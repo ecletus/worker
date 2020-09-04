@@ -19,7 +19,7 @@ type Job struct {
 }
 
 // NewStruct initialize job struct
-func (job *Job) NewStruct(site core.SiteInterface) interface{} {
+func (job *Job) NewStruct(site *core.Site) interface{} {
 	qorJobInterface := job.Worker.JobResource.NewStruct(site).(QorJobInterface)
 	qorJobInterface.SetJob(job)
 	return qorJobInterface
@@ -33,13 +33,9 @@ func (job *Job) GetQueue() Queue {
 	return job.Worker.Queue
 }
 
-func (job Job) HasPermissionE(mode roles.PermissionMode, context *core.Context) (ok bool, err error) {
+func (job Job) HasPermission(mode roles.PermissionMode, context *core.Context) (perm roles.Perm) {
 	if job.Permission == nil {
-		return true, roles.ErrDefaultPermission
+		return
 	}
-	var roles_ = []interface{}{}
-	for _, role := range context.Roles {
-		roles_ = append(roles_, role)
-	}
-	return roles.HasPermissionDefaultE(true, job.Permission, mode, roles_...)
+	return job.Permission.HasPermission(context, mode, context.Roles.Interfaces()...)
 }

@@ -43,7 +43,7 @@ func (worker *Worker) CreateCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			siteName, _ := cmd.Flags().GetString("site")
-			err := worker.Sites.EachOrAll(siteName, func(site core.SiteInterface) (error) {
+			err := worker.Sites.Reader().EachOrAll(siteName, func(site *core.Site) (error) {
 				// TODO: List Running, By State ...
 				return nil
 			})
@@ -108,8 +108,8 @@ func (worker *Worker) CreateCommand() *cobra.Command {
 
 			if runAnother {
 				if newJob := worker.saveAnotherJob(site, qorJobID); newJob != nil {
-					newJobID := newJob.GetJobID()
-					qorJobID = newJobID
+					// newJobID := newJob.GetJobID()
+					//TODO: implements qorJobID = newJobID
 				} else {
 					return errwrap.Wrap(err, "failed to clone job", uid)
 				}
